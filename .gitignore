@@ -1,0 +1,27 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 原始录制及点云/图像输出
+*.xbin
+*.pcd
+*.las
+*.laz
+*.jpg
+*.jpeg
+*.png
+*.enx
+
+# 数据集导出目录及日志
+.extract_state/
+calib/
+images/
+lidar_points/
+extraction_manifest.json
+gnss.csv
+raw_gnss_log.txt
+raw_ntrip_log.data
+raw_ppk_log.data
+
+# LixelStudio 厂商派生检查程序，仅保留在本机
+XGridsInspectLixelBag.exe
