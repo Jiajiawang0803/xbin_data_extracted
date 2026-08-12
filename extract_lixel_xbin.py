@@ -104,8 +104,8 @@ def topic_output_files(output_dir: Path, topic_name: str) -> set[Path]:
     """Return only files owned by a topic, avoiding a full output-tree scan."""
     camera_directories = {
         "/camera_left/h264": "camera_0",
-        "/camera_center/h264": "camera_1",
-        "/camera_right/h264": "camera_2",
+        "/camera_center/h264": "camera_2",
+        "/camera_right/h264": "camera_1",
     }
     fixed_files = {
         "/imu": "imu.csv",

@@ -24,12 +24,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from extract_lixel_xbin import DEFAULT_LIXEL_DIR
+from export_lixel_extrinsics import export_extrinsics
 
 
 CAMERA_TOPICS = (
     ("left", "/camera_left/h264", "camera_0"),
-    ("center", "/camera_center/h264", "camera_1"),
-    ("right", "/camera_right/h264", "camera_2"),
+    ("center", "/camera_center/h264", "camera_2"),
+    ("right", "/camera_right/h264", "camera_1"),
 )
 
 RTK_TOPICS = (
@@ -241,6 +242,18 @@ def main() -> int:
         raise SystemExit(f"Export failed for: {failed_topics}")
 
     indexes: dict[str, int] = {}
+    extrinsic_directory: str | None = None
+    if "config" in components:
+        direction_explicit_dir = args.output / "calib" / "extrinsics_xyzw"
+        generated = export_extrinsics(
+            args.output / "calib" / "config", direction_explicit_dir
+        )
+        extrinsic_directory = "calib/extrinsics_xyzw"
+        print(
+            f"Extrinsics: {len(generated)} direction-explicit file(s) in "
+            f"{direction_explicit_dir}"
+        )
+
     if "imu" in components:
         count = count_data_rows(args.output / "imu.csv")
         indexes["imu"] = count
@@ -273,6 +286,7 @@ def main() -> int:
         "counts": indexes,
         "exports": results,
         "calibration_directory": "calib/config",
+        "direction_explicit_extrinsics": extrinsic_directory,
         "imu_output": "imu.csv",
         "rtk_outputs": {
             "solution": "gnss.csv",

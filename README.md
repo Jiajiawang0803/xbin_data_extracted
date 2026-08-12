@@ -33,9 +33,14 @@ python C:\Jiajia\python\xbin_tools\extract_lixel_dataset.py `
   - IMU–LiDAR 外参；
   - RTK 天线杆臂参数；
   - IMU、LiDAR 型号及标定参数。
+- `calib/extrinsics_xyzw/*.yaml`
+  - 文件名明确标识方向，例如 `lidar_to_camera_center.yaml`；
+  - 每组外参同时提供正向和逆向文件；
+  - 平移格式为 `x, y, z`，单位为米；
+  - 旋转格式为 `qx, qy, qz, qw`，四元数顺序为 XYZW。
 - `images/camera_0/*.jpg`：左相机图片；
-- `images/camera_1/*.jpg`：中相机图片；
-- `images/camera_2/*.jpg`：右相机图片；
+- `images/camera_1/*.jpg`：右相机图片；
+- `images/camera_2/*.jpg`：中心相机图片；
 - `imu.csv`：带时间戳的三轴角速度和三轴加速度；
 - `lidar_points/*.pcd`：原始单帧点云；
 - `gnss.csv`：带时间戳的经纬高、定位状态、DOP、位置方差和卫星数；
@@ -53,7 +58,57 @@ x y z normal_x normal_y normal_z intensity timestamp ring
 
 其中，PCD 文件名表示单帧时间戳，每个点的 `timestamp` 字段保存逐点时间戳。
 
-## 二、选择需要导出的数据
+三路相机的厂商编号和图片目录对应关系为：
+
+| 物理相机 | XBIN主题 | 图片目录 |
+|---|---|---|
+| 左相机 | `/camera_left/h264` | `images/camera_0` |
+| 右相机 | `/camera_right/h264` | `images/camera_1` |
+| 中心相机 | `/camera_center/h264` | `images/camera_2` |
+
+## 二、外参方向与格式
+
+方向明确的外参位于 `calib/extrinsics_xyzw`，文件名采用：
+
+```text
+source_to_target.yaml
+```
+
+所有文件统一使用以下定义：
+
+```text
+p_target = R(q_xyzw) * p_source + t
+```
+
+例如：
+
+- `lidar_to_camera_center.yaml`：将LiDAR坐标变换到中心相机坐标；
+- `camera_center_to_lidar.yaml`：将中心相机坐标变换到LiDAR坐标；
+- `lidar_to_imu.yaml`：将LiDAR坐标变换到IMU坐标；
+- `imu_to_lidar.yaml`：将IMU坐标变换到LiDAR坐标；
+- `rtk_antenna_to_imu.yaml`：RTK天线到IMU的杆臂变换；
+- `imu_to_rtk_antenna.yaml`：上述RTK杆臂的逆变换。
+
+每个YAML的核心字段为：
+
+```yaml
+x: 0.0
+y: 0.0
+z: 0.0
+qx: 0.0
+qy: 0.0
+qz: 0.0
+qw: 1.0
+```
+
+原厂矩阵文件仍保留在 `calib/config`，不会被覆盖。也可以对已有标定目录单独执行：
+
+```powershell
+python .\export_lixel_extrinsics.py `
+  OUTPUT_DIR\calib\config
+```
+
+## 三、选择需要导出的数据
 
 可通过 `--components` 只导出部分数据：
 
@@ -94,7 +149,7 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 | `lidar` | 原始带逐点时间戳的单帧点云 |
 | `rtk` | GNSS结果、接收机日志、NTRIP和PPK数据 |
 
-## 三、指定时间范围
+## 四、指定时间范围
 
 `--start-us` 是绝对 Unix 时间戳，单位为整数微秒；`--duration-s` 是导出时长，
 单位为秒。`--duration-s 0` 表示从起始位置一直导出到录制结束。
@@ -107,7 +162,7 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 
 不指定时，默认从录制开头导出全部数据。
 
-## 四、并行加速与断点续跑
+## 五、并行加速与断点续跑
 
 完整导出默认并行处理最多 4 个传感器主题：
 
@@ -129,7 +184,7 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 
 已成功完成的主题会根据 `OUTPUT_DIR\.extract_state` 中的状态文件自动跳过。
 
-## 五、Binary PCD
+## 六、Binary PCD
 
 LiDAR 默认直接写成标准的非压缩 Binary PCD：
 
@@ -162,7 +217,7 @@ Binary PCD 在该测试中提速约 **2.85 倍**，代表帧体积减少约 **54
 安全退出。所有修改只在当前 LiDAR 导出子进程的内存中生效，不会修改磁盘上的
 厂商 DLL。
 
-## 六、单主题底层导出
+## 七、单主题底层导出
 
 底层脚本使用 LixelStudio 自带的官方 `lixel_bag.dll`：
 
@@ -195,7 +250,7 @@ python .\extract_lixel_xbin.py INPUT.xbin OUTPUT_DIR `
 /raw_ppk_log
 ```
 
-## 七、原始数据保留说明
+## 八、原始数据保留说明
 
 厂商解码器会输出零值无效回波，以及三个值为零的法向占位字段。工具不会主动
 过滤或修改这些点，以保证导出结果仍然是帧级原始点云。如需过滤无效点，建议在
