@@ -1,7 +1,7 @@
 # Lixel XBIN 数据提取工具
 
 本目录用于检查和解析 XGRIDS/Lixel `.xbin` 录制文件，可以导出标定参数、
-三路相机图片、原始激光点云以及 RTK/GNSS 数据。解析过程以只读方式打开原始
+三路相机图片、原始 IMU、原始激光点云以及 RTK/GNSS 数据。解析过程以只读方式打开原始
 录制文件，不会修改 `.xbin`，也不会修改已安装的 LixelStudio 程序文件。
 
 当前代码已在 **LixelStudio 4.0.1.4** 上完成验证，默认安装目录为：
@@ -36,6 +36,7 @@ python C:\Jiajia\python\xbin_tools\extract_lixel_dataset.py `
 - `images/camera_0/*.jpg`：左相机图片；
 - `images/camera_1/*.jpg`：中相机图片；
 - `images/camera_2/*.jpg`：右相机图片；
+- `imu.csv`：带时间戳的三轴角速度和三轴加速度；
 - `lidar_points/*.pcd`：原始单帧点云；
 - `gnss.csv`：带时间戳的经纬高、定位状态、DOP、位置方差和卫星数；
 - `raw_gnss_log.txt`：GNSS 接收机原始文本消息；
@@ -69,6 +70,10 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
   --components lidar
 
+# 只导出 IMU
+python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
+  --components imu
+
 # 只导出 RTK/GNSS
 python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
   --components rtk
@@ -85,6 +90,7 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 | `all` | 全部数据，默认值 |
 | `config` | 内参、外参和传感器配置 |
 | `cameras` | 左、中、右三路相机图片 |
+| `imu` | 带时间戳的三轴角速度和三轴加速度 |
 | `lidar` | 原始带逐点时间戳的单帧点云 |
 | `rtk` | GNSS结果、接收机日志、NTRIP和PPK数据 |
 
@@ -182,6 +188,7 @@ python .\extract_lixel_xbin.py INPUT.xbin OUTPUT_DIR `
 /camera_left/h264
 /camera_center/h264
 /camera_right/h264
+/imu
 /gnss_data
 /raw_gnss_log
 /raw_ntrip_log
@@ -193,3 +200,12 @@ python .\extract_lixel_xbin.py INPUT.xbin OUTPUT_DIR `
 厂商解码器会输出零值无效回波，以及三个值为零的法向占位字段。工具不会主动
 过滤或修改这些点，以保证导出结果仍然是帧级原始点云。如需过滤无效点，建议在
 完成原始数据归档后另行处理。
+
+IMU 输出文件 `imu.csv` 的字段如下：
+
+```text
+#timestamp gyro_x gyro_y gyro_z acc_x acc_y acc_z
+```
+
+其中 `timestamp` 为 Unix 秒时间戳。Cc01 和 d3 录制中的 IMU 采样率约为
+200 Hz。该文件保存角速度和加速度测量值，不包含 INS/Odom 融合位姿。

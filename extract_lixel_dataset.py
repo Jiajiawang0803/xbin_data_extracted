@@ -2,6 +2,7 @@
 
 Outputs created by the vendor decoder:
   calib/config/*.yaml       camera/IMU/LiDAR intrinsics and extrinsics
+  imu.csv                   timestamped gyroscope and accelerometer samples
   images/camera_[0-2]/*.jpg timestamp-named decoded camera frames
   lidar_points/*.pcd        raw frames with a per-point ``timestamp`` field
   gnss.csv                  timestamped GNSS/RTK position solutions
@@ -63,11 +64,18 @@ def write_timestamp_index(directory: Path, pattern: str) -> int:
     return len(rows)
 
 
+def count_data_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        return sum(1 for line in handle if line.strip() and not line.startswith("#"))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Export calibration YAML, three timestamped camera streams, and raw "
-            "per-point-timestamped PCD frames, and RTK/GNSS data from a Lixel XBIN"
+            "per-point-timestamped PCD frames, IMU, and RTK/GNSS data from a Lixel XBIN"
         )
     )
     parser.add_argument("xbin", type=Path)
@@ -75,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--components",
         nargs="+",
-        choices=("all", "config", "cameras", "lidar", "rtk"),
+        choices=("all", "config", "cameras", "lidar", "imu", "rtk"),
         default=("all",),
     )
     parser.add_argument(
@@ -122,7 +130,7 @@ def main() -> int:
 
     components = set(args.components)
     if "all" in components:
-        components = {"config", "cameras", "lidar", "rtk"}
+        components = {"config", "cameras", "lidar", "imu", "rtk"}
 
     args.output.mkdir(parents=True, exist_ok=True)
     state_directory = args.output / ".extract_state"
@@ -209,6 +217,8 @@ def main() -> int:
     topics: list[str] = []
     if "config" in components:
         topics.append("/config_file")
+    if "imu" in components:
+        topics.append("/imu")
     if "cameras" in components:
         topics.extend(topic for _name, topic, _directory in CAMERA_TOPICS)
     if "lidar" in components:
@@ -231,6 +241,11 @@ def main() -> int:
         raise SystemExit(f"Export failed for: {failed_topics}")
 
     indexes: dict[str, int] = {}
+    if "imu" in components:
+        count = count_data_rows(args.output / "imu.csv")
+        indexes["imu"] = count
+        print(f"IMU: {count} timestamped sample(s) in {args.output / 'imu.csv'}")
+
     if "cameras" in components:
         for name, topic, directory_name in CAMERA_TOPICS:
             directory = args.output / "images" / directory_name
@@ -258,6 +273,7 @@ def main() -> int:
         "counts": indexes,
         "exports": results,
         "calibration_directory": "calib/config",
+        "imu_output": "imu.csv",
         "rtk_outputs": {
             "solution": "gnss.csv",
             "receiver_text": "raw_gnss_log.txt",

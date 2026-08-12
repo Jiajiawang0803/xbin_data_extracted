@@ -108,6 +108,7 @@ def topic_output_files(output_dir: Path, topic_name: str) -> set[Path]:
         "/camera_right/h264": "camera_2",
     }
     fixed_files = {
+        "/imu": "imu.csv",
         "/gnss_data": "gnss.csv",
         "/raw_gnss_log": "raw_gnss_log.txt",
         "/raw_ntrip_log": "raw_ntrip_log.data",
