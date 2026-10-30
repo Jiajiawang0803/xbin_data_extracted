@@ -17,6 +17,8 @@ __pycache__/
 calib/
 images/
 lidar_points/
+project_data/
+poses.csv
 extraction_manifest.json
 gnss.csv
 raw_gnss_log.txt

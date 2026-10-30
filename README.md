@@ -1,7 +1,7 @@
 # Lixel XBIN 数据提取工具
 
 本目录用于检查和解析 XGRIDS/Lixel `.xbin` 录制文件，可以导出标定参数、
-三路相机图片、原始 IMU、原始激光点云以及 RTK/GNSS 数据。解析过程以只读方式打开原始
+三路相机图片、原始 IMU、原始激光点云、RTK/GNSS 数据以及项目位姿轨迹。解析过程以只读方式打开原始
 录制文件，不会修改 `.xbin`，也不会修改已安装的 LixelStudio 程序文件。
 
 当前代码已在 **LixelStudio 4.0.1.4** 上完成验证，默认安装目录为：
@@ -44,6 +44,7 @@ python C:\Jiajia\python\xbin_tools\extract_lixel_dataset.py `
 - `imu.csv`：带时间戳的三轴角速度和三轴加速度；
 - `lidar_points/*.pcd`：原始单帧点云；
 - `gnss.csv`：带时间戳的经纬高、定位状态、DOP、位置方差和卫星数；
+- `poses.csv`：XBIN 内嵌的原厂项目位姿轨迹，保留原始文件内容；
 - `raw_gnss_log.txt`：GNSS 接收机原始文本消息；
 - `raw_ntrip_log.data`：原始 RTCM/NTRIP 差分数据；
 - `raw_ppk_log.data`：原始 PPK 接收机数据；
@@ -133,6 +134,10 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
   --components rtk
 
+# 只导出项目位姿轨迹
+python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
+  --components poses
+
 # 同时导出多个类别
 python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
   --components config lidar rtk
@@ -148,6 +153,16 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 | `imu` | 带时间戳的三轴角速度和三轴加速度 |
 | `lidar` | 原始带逐点时间戳的单帧点云 |
 | `rtk` | GNSS结果、接收机日志、NTRIP和PPK数据 |
+| `poses` | 通过 `/project_data` 提取原厂位姿，保存为根目录的 `poses.csv` |
+
+`poses` 使用厂商的项目文件导出接口，在临时目录解码后仅保留根目录的 `poses.csv`，
+不创建 `project_data/` 输出目录。根目录的 `gnss.csv` 仍由 `rtk` 的 `/gnss_data` 导出。
+如果 XBIN 没有 `/project_data`，或导出后没有非空的 `poses.csv`，任务会明确报错，
+不会从 IMU 或 GNSS 推算、填充位姿。默认 `all` 也包含此项；不含项目轨迹的录制
+可显式选择 `--components config cameras lidar imu rtk` 导出传感器数据。
+
+该文件保留原厂格式；实测 d5 文件为无表头、逗号分隔、每行 8 列。工具不重新排列
+字段或转换坐标系，位姿坐标系和各列定义应以设备或项目格式说明为准。
 
 ## 四、指定时间范围
 
@@ -161,6 +176,9 @@ python .\extract_lixel_dataset.py INPUT.xbin OUTPUT_DIR `
 ```
 
 不指定时，默认从录制开头导出全部数据。
+
+`poses` 是内嵌的项目文件快照，因此始终提取完整 `/project_data`，不受上述时间范围
+限制，也不裁剪 `poses.csv`。清单中用 `poses_time_range: "full_project"` 标记此行为。
 
 ## 五、并行加速与断点续跑
 
@@ -245,6 +263,7 @@ python .\extract_lixel_xbin.py INPUT.xbin OUTPUT_DIR `
 /camera_right/h264
 /imu
 /gnss_data
+/project_data
 /raw_gnss_log
 /raw_ntrip_log
 /raw_ppk_log

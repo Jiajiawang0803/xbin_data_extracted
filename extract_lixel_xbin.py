@@ -118,6 +118,8 @@ def topic_output_files(output_dir: Path, topic_name: str) -> set[Path]:
         return set((output_dir / "lidar_points").glob("*.pcd"))
     if topic_name == "/config_file":
         return {p for p in (output_dir / "calib" / "config").glob("*") if p.is_file()}
+    if topic_name == "/project_data":
+        return {p for p in (output_dir / "project_data").rglob("*") if p.is_file()}
     if topic_name in camera_directories:
         directory = output_dir / "images" / camera_directories[topic_name]
         return set(directory.glob("*.jpg"))

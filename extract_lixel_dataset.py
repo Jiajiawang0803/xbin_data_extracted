@@ -6,6 +6,7 @@ Outputs created by the vendor decoder:
   images/camera_[0-2]/*.jpg timestamp-named decoded camera frames
   lidar_points/*.pcd        raw frames with a per-point ``timestamp`` field
   gnss.csv                  timestamped GNSS/RTK position solutions
+  poses.csv                 original project trajectory (when embedded in XBIN)
   raw_*_log.*               raw receiver, NTRIP, and PPK data
 
 The input XBIN is opened read-only through LixelStudio's lixel_bag.dll.
@@ -17,9 +18,12 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -76,7 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Export calibration YAML, three timestamped camera streams, and raw "
-            "per-point-timestamped PCD frames, IMU, and RTK/GNSS data from a Lixel XBIN"
+            "per-point-timestamped PCD frames, IMU, RTK/GNSS, and project poses "
+            "from a Lixel XBIN"
         )
     )
     parser.add_argument("xbin", type=Path)
@@ -84,7 +89,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--components",
         nargs="+",
-        choices=("all", "config", "cameras", "lidar", "imu", "rtk"),
+        choices=("all", "config", "cameras", "lidar", "imu", "rtk", "poses"),
         default=("all",),
     )
     parser.add_argument(
@@ -131,7 +136,7 @@ def main() -> int:
 
     components = set(args.components)
     if "all" in components:
-        components = {"config", "cameras", "lidar", "imu", "rtk"}
+        components = {"config", "cameras", "lidar", "imu", "rtk", "poses"}
 
     args.output.mkdir(parents=True, exist_ok=True)
     state_directory = args.output / ".extract_state"
@@ -141,6 +146,11 @@ def main() -> int:
         return state_directory / f"{safe_name}.json"
 
     def export(topic: str) -> dict[str, object]:
+        # Project files are embedded snapshots, not timestamped pose messages.
+        # Always select the complete topic, even for a short sensor export.
+        start_us = 0 if topic == "/project_data" else args.start_us
+        duration_s = 0 if topic == "/project_data" else args.duration_s
+        poses_path = args.output / "poses.csv"
         marker = marker_path(topic)
         if args.resume and marker.is_file():
             try:
@@ -149,8 +159,12 @@ def main() -> int:
                 state = {}
             if (
                 state.get("source_xbin") == str(args.xbin.resolve())
-                and state.get("start_us") == args.start_us
-                and state.get("duration_s") == args.duration_s
+                and state.get("start_us") == start_us
+                and state.get("duration_s") == duration_s
+                and (
+                    topic != "/project_data"
+                    or (poses_path.is_file() and poses_path.stat().st_size > 0)
+                )
                 and (
                     topic != "/lidar"
                     or state.get("pcd_format", "ascii") == args.pcd_format
@@ -170,22 +184,44 @@ def main() -> int:
             "--topic",
             topic,
             "--start-us",
-            str(args.start_us),
+            str(start_us),
             "--duration-s",
-            str(args.duration_s),
+            str(duration_s),
             "--lixel-dir",
             str(args.lixel_dir),
         ]
         if topic == "/lidar" and args.pcd_format == "binary":
             command.append("--binary-pcd")
         print(f"Exporting {topic} ...", flush=True)
-        completed = subprocess.run(
-            command,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+        # Validate project output in isolation so a stale poses.csv from an
+        # earlier source cannot make an empty vendor export look successful.
+        export_directory = (
+            tempfile.TemporaryDirectory(prefix=".project_export_", dir=args.output)
+            if topic == "/project_data"
+            else nullcontext(str(args.output))
         )
+        with export_directory as directory:
+            command[3] = directory
+            completed = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if topic == "/project_data" and completed.returncode == 0:
+                project_directory = Path(directory) / "project_data"
+                exported_poses = project_directory / "poses.csv"
+                if not exported_poses.is_file() or exported_poses.stat().st_size == 0:
+                    print(
+                        "ERROR: /project_data did not produce a nonempty "
+                        "project_data/poses.csv; this XBIN may not contain project poses.",
+                        file=sys.stderr,
+                    )
+                    return {
+                        "topic": topic, "completed": False, "reason": "poses_missing"
+                    }
+                shutil.copyfile(exported_poses, poses_path)
         if completed.returncode != 0:
             if completed.stdout:
                 print(completed.stdout, end="", file=sys.stderr)
@@ -203,8 +239,8 @@ def main() -> int:
                 {
                     "topic": topic,
                     "source_xbin": str(args.xbin.resolve()),
-                    "start_us": args.start_us,
-                    "duration_s": args.duration_s,
+                    "start_us": start_us,
+                    "duration_s": duration_s,
                     "pcd_format": args.pcd_format if topic == "/lidar" else None,
                     "completed_utc": datetime.now(timezone.utc).isoformat(),
                 },
@@ -226,6 +262,8 @@ def main() -> int:
         topics.append("/lidar")
     if "rtk" in components:
         topics.extend(RTK_TOPICS)
+    if "poses" in components:
+        topics.append("/project_data")
 
     results: list[dict[str, object]] = []
     if args.jobs == 1:
@@ -259,6 +297,12 @@ def main() -> int:
         indexes["imu"] = count
         print(f"IMU: {count} timestamped sample(s) in {args.output / 'imu.csv'}")
 
+    if "poses" in components:
+        poses_path = args.output / "poses.csv"
+        count = count_data_rows(poses_path)
+        indexes["poses"] = count
+        print(f"Poses: {count} sample(s) in {poses_path} (full project trajectory)")
+
     if "cameras" in components:
         for name, topic, directory_name in CAMERA_TOPICS:
             directory = args.output / "images" / directory_name
@@ -288,6 +332,8 @@ def main() -> int:
         "calibration_directory": "calib/config",
         "direction_explicit_extrinsics": extrinsic_directory,
         "imu_output": "imu.csv",
+        "poses_output": "poses.csv" if "poses" in components else None,
+        "poses_time_range": "full_project" if "poses" in components else None,
         "rtk_outputs": {
             "solution": "gnss.csv",
             "receiver_text": "raw_gnss_log.txt",
